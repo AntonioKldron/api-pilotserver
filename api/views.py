@@ -17,6 +17,7 @@ import requests
 from sepa.views 							import conectarapiintelisis, loggeractions
 from sepa.models 							import sepa_branch_details, sepa_log
 from .models 								import pilot
+from isapilib.api.models					import BranchAPI,UserAPI
 
 # ================================================================================================
 # 										API
@@ -250,10 +251,10 @@ class webhook(APIView):
 			if 1 in range(0,len(branch_code.split('-'))):
 				sucursal_int = branch_code.split('-')[1]
 			else:
-				sucursal_int = sepa_branch.objects.get(gwmbac=branch_code)
+				sucursal_int = BranchAPI.objects.get(gwmbac=branch_code)
 				sucursal_int = sucursal_int.id_intelisis
 			# Se almacena el branch_id para que quede registrado si falla la conexion con la bd
-			tamp_branch = sepa_branch.objects.get(gwmbac=branch_code)
+			tamp_branch = BranchAPI.objects.get(gwmbac=branch_code)
 			default_branch = tamp_branch.id 
 
 			venta = request.data
@@ -263,12 +264,12 @@ class webhook(APIView):
 			venta['sucursal'] =  sucursal_int
 
 			with in_database("default"):
-				if sepa_branch.objects.filter(gwmbac=branch_code).exists() != True:
+				if BranchAPI.objects.filter(gwmbac=branch_code).exists() != True:
 					mensaje_error += 'Intelisis: la sucursal no existe\n'
 					valid = False
 					response = {'data':[], 'status': '0', 'message':mensaje_error}
 				if valid == True:
-					default_branch = sepa_branch.objects.get(gwmbac=branch_code)
+					default_branch = BranchAPI.objects.get(gwmbac=branch_code)
 					default_branch = default_branch.id
 					# Inicia la ejecucion del procedimiento webhook
 					response = sale.execute(venta, default_branch)
@@ -359,9 +360,9 @@ class checkConnectionsDB(APIView):
 		superUser = False
 		if 'sup' in request.GET:
 			tkn = _token.getUser('Bearer '+request.GET['sup'])
-			usr = user.objects.get(id=tkn['user_id'])
+			usr = UserAPI.objects.get(id=tkn['user_id'])
 			superUser = usr.is_superuser
-		response["data"] = sepa_branch.objects.filter(gwmbac__in=['M3037','M3037B','M2695','M1027','M1777','M2079','M2078','M2017','M2688','M1509','M1059','M1511','M3101','M2046','M2334','M2268','M2043','M2047','M3787','M2453'])
+		response["data"] = BranchAPI.objects.filter(gwmbac__in=['M3037','M3037B','M2695','M1027','M1777','M2079','M2078','M2017','M2688','M1509','M1059','M1511','M3101','M2046','M2334','M2268','M2043','M2047','M3787','M2453'])
 		response["code_enviroment"] = settings.CODE_ENVIROMENT
 		response["super"] = superUser
 		archivo = 'pilot/checkConnectionsDB.html'
@@ -393,7 +394,7 @@ class vehicle():
 				regex_guid = r'^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$'
 				regex_vin = r'^[A-HJ-NPR-Z0-9]{17}$'
 				idVehicle = request.GET['id']
-				branch = sepa_branch.objects.get(id=request.GET['branch'])
+				branch = BranchAPI.objects.get(id=request.GET['branch'])
 				branch = branch.id
 
 				if re.match(regex_guid, idVehicle):
@@ -431,7 +432,7 @@ class vehicle():
 	def read(request):
 		try:
 			idVehicle = request.GET['id']
-			branch = sepa_branch.objects.get(id=request.GET['branch'])
+			branch = BranchAPI.objects.get(id=request.GET['branch'])
 			regex_guid = r'^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$'
 			regex_vin = r'^[A-HJ-NPR-Z0-9]{17}$'
 			if re.match(regex_guid, idVehicle):
@@ -517,7 +518,7 @@ class sucursal(View):
 
 	def getInfo(id_sucursal):
 		external_db = conectarapiintelisis(id_sucursal)
-		sucursal = sepa_branch.objects.get(id=id_sucursal)
+		sucursal = BranchAPI.objects.get(id=id_sucursal)
 		response = pilot.objects.getBranchInfo(external_db, sucursal.id_intelisis)
 		return response
 
@@ -742,7 +743,7 @@ class _login(APIView):
 			usuario = request.POST["usuario"]
 			password = request.POST["password"]
 			# * Verificamos que el usuario si exista
-			objUsuario = user.objects.get(usuario=usuario)
+			objUsuario = UserAPI.objects.get(usuario=usuario)
 
 			datos = {"usuario": usuario, "password": password}
 			_user = authenticate(request, username=usuario, password=password)
@@ -780,7 +781,7 @@ class log(APIView):
 	def get(self, request):
 		id_sucursal = request.GET['sucursal']
 		external_db = conectarapiintelisis(id_sucursal)
-		sucursal = sepa_branch.objects.get(id=id_sucursal)
+		sucursal = BranchAPI.objects.get(id=id_sucursal)
 		response = pilot.objects.getLogSucursal(external_db, sucursal.id_intelisis)            
 		return Response({'data': response['data'], 'status': response['status'], 'details': str(response['details'])}, status=status.HTTP_200_OK)
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):

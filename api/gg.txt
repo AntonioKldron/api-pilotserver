@@ -1,0 +1,510 @@
+    
+"""
+class _token(APIView):
+	# todo unir las dos funciones de validar token en una sola
+	# Valida token bearer devolviendo mensaje y bool
+	def validar(app_tk):
+		try:
+			status = False
+			m = re.search('(Bearer)(\s)(.*)', app_tk)
+			app_tk = m.group(3)
+			# user = Token.objects.get(key=app_tk).user
+			user = jwt.decode(app_tk, settings.SECRET_KEY, algorithms="HS256")
+			if(user != False):
+				status = True
+				message = 'Credenciales validas.'
+		except Exception as e:
+			message = 'El token no es valido o ya caduco, vuelve a iniciar sesión'
+		return {'valid': status, 'message': message}
+
+	# Valida token devolviendo solo bool
+	def check(token):
+		tokenValido = None
+		statusResponse = status.HTTP_401_UNAUTHORIZED
+		try:
+			tokenValido = _token.validar(token)
+			if tokenValido['valid'] != False:
+				tokenValido = True
+				statusResponse = status.HTTP_200_OK
+		except Exception as e:
+			tokenValido = False
+			print(e)
+			statusResponse = status.HTTP_401_UNAUTHORIZED
+		return Response({'token_valido' : tokenValido}, statusResponse)
+	# Devuelve el usuario al que corresponde un token
+	def getUser(req):
+		try:
+			if isinstance(req, str):
+				app_tk = req
+			else:
+				app_tk = req.META["HTTP_AUTHORIZATION"]
+			m = re.search('(Bearer)(\s)(.*)', app_tk)
+			app_tk = m.group(3)
+			# user = Token.objects.get(key=app_tk).user
+			user = jwt.decode(app_tk, settings.SECRET_KEY, algorithms="HS256")
+			return user
+		except Exception as e:
+			return False
+	# Solicitudes para check o validar
+	@action(detail=True, methods=['POST'])
+	def post(self, request, format=None):
+		action = request.POST['action']
+		token = request.POST['token']
+		if action == 'check':
+			resp = _token.check(token)
+		elif action == 'validar':
+			statusResponse = status.HTTP_200_OK
+			try:
+				tokenValido = _token.validar(token)
+				if tokenValido != False:
+					tokenValido = True
+			except Exception as e:
+				tokenValido = False
+				statusResponse = status.HTTP_400_BAD_REQUEST
+				print('_token Post:')
+				print(e)
+			return Response({'token_valido' : tokenValido}, status = statusResponse)
+		else:
+			resp = False
+		return resp
+
+
+class sale(APIView):
+	@api_view(('GET',))
+	def getSalesHistory(request):
+		status = False
+		resp = {}
+		resp['historico'] = ''
+		statusActualPilot = ''
+		try:
+			token_valid = _token.validar(request.META["HTTP_AUTHORIZATION"])
+			if token_valid['valid'] == True:
+				id_sucursal = request.GET['sucursal']
+				idVentaPilot = request.GET['guid']
+
+				external_db = conectarapiintelisis(id_sucursal)
+				resp = pilot.objects.getSalesHistory(external_db, idVentaPilot)
+
+				usr = sepa_branch_details.objects.filter(branch_id=id_sucursal).first()
+
+				token = sale.getToken(usr.username, usr.password)
+				params = {
+					"data": {
+						"id": idVentaPilot
+					},
+					"header": {
+						"FlowName": "sales_read",
+						"SequenceId": 2,
+						"TimeStamp": 1248377,
+						"TrackingId": "55A6BCD4-0857-4A86-85FB-09A228B641B4",
+						"access_token": token
+					}
+				}
+				responsePilot = requests.post('https://api.pilotsolution.net/v1/sales/read.php', json=params)
+				responsePilot = responsePilot.json() 
+				if responsePilot['result']['status'] == 'success':
+					statusActualPilot = responsePilot['result']['entitydata']['status']['name']
+				else:
+					statusActualPilot = responsePilot['result']['message']
+				status = True
+			else:
+				status = False
+				resp['historico'] = 'Token no valido.'
+
+		except Exception as e :
+			print('Este es el error al obtener el estatus de una venta')
+			print(str(e))
+			if str(e) == "'HTTP_AUTHORIZATION'":
+				resp['historico'] = 'Token invalido'
+			elif(str(e) == "'entitydata'"):
+				resp['historico'] = 'No se encontraron registros '
+			else:
+				resp['historico'] = 'Ocurrió un error al consultar el historico de la venta.'
+			
+		data = {'status': status, 'data': resp['historico'], 'statusPilot': statusActualPilot}
+		return Response(data)
+
+
+	def execute(data, branch_id):
+		response = {}
+		external_db=conectarapiintelisis(branch_id)
+		folio = pilot.objects.insertLogWebhook(external_db, data)
+		response['info'] = {'data': folio, 'status': 'success', 'message':'Datos recibidos correctamente en el webhook'}
+		response['branch_id'] = branch_id
+		return response
+
+	def validate(id):
+		UUID_PATTERN = re.compile(r'^[\da-f]{8}-([\da-f]{4}-){3}[\da-f]{12}$', re.IGNORECASE)
+		if UUID_PATTERN.match(id):
+			return True
+		else:
+			return False
+
+	def errorIntegracion(username, password, id_pilot, mensaje_error):
+		responsePilot = requests.get(f'https://api.pilotsolution.net/v1/users/auth.php?username={username}&password={password}')
+		if responsePilot:
+			result = responsePilot.json()
+			params = {
+				"data": {
+					"id": id_pilot,
+					"status_code": "error_integracion"
+				},
+				"header": {
+					"FlowName": "sales_change_status",
+					"SequenceId": 2,
+					"TimeStamp": 1248377,
+					"TrackingId": "55A6BCD4-0857-4A86-85FB-09A228B641B4",
+					"access_token": result['result']['entitydata']
+				}
+			}
+			responsePilot = requests.post('https://api.pilotsolution.net/v1/sales/change_status.php', json=params)
+			params = {
+				"data": {
+					"sale_id": id_pilot,
+					"comment": mensaje_error
+				},
+				"header": {
+					"FlowName": "sale_comment",
+					"SequenceId": 2,
+					"TimeStamp": 1248377,
+					"TrackingId": "55A6BCD4-0857-4A86-85FB-09A228B641B4",
+					"access_token": result['result']['entitydata']
+				}
+			}
+			responsePilot = requests.post('https://api.pilotsolution.net/v1/sales/comments/create.php', json=params)
+
+	def getCredentialsByHeader(req):
+		username = 'api.intelisis@myworkplace.com.ar'
+		if 'username' in req.GET:
+			username = req.GET["username"]
+		if sepa_branch_details.objects.filter(username=username).exists():
+			credentials = sepa_branch_details.objects.filter(username=username).first()
+		else:
+			credentials = []
+		return credentials
+
+	@api_view(('GET',))
+	def getSale(request):
+		try:
+			error = False
+			message = 'Lectura de la venta exitosa.'
+			data_sale = sale.read(request.GET['branch'], request.GET['sale_id'])
+		except Exception as e :
+			error = True
+			message = 'Ocurrio un error al leer la venta en Pilot'
+			data_sale = {}
+		data = {'error': error, 'message': message, 'data': data_sale}
+		return Response(data)
+
+	def read(branch, sale_id):
+		# Si entra por webhook ya vienen los datos, si viene por lectura se recuperan de la bd
+		usrPilot = {}
+		if isinstance(branch, dict):
+			usrPilot = branch
+		else:
+			usr = sepa_branch_details.objects.filter(branch_id=branch).first()
+			usrPilot['username'] = usr.username
+			usrPilot['password'] = usr.password
+
+		token = sale.getToken(usrPilot['username'], usrPilot['password'])
+		params = {
+			"data": {
+				"id": sale_id
+			},
+			"header": {
+				"FlowName": "sales_read",
+				"SequenceId": 2,
+				"TimeStamp": 1248377,
+				"TrackingId": "55A6BCD4-0857-4A86-85FB-09A228B641B4",
+				"access_token": token
+			}
+		}
+		responsePilot = requests.post('https://api.pilotsolution.net/v1/sales/read.php', json=params)
+		return responsePilot.json()
+
+	def getToken(username, password):
+		token = ''
+		try:
+			responsePilot = requests.get(f'https://api.pilotsolution.net/v1/users/auth.php?username={username}&password={password}')
+			result = responsePilot.json()
+			token = result['result']['entitydata']
+		except:
+			token = 'NA'
+		return token
+#Login para aplicacion Pilot
+
+# Venta Pilot cuando llega por la integracion
+class webhook(APIView):
+	def getIpInfo(request):
+		ip = ''
+		try:
+			origin = ""
+			data_ip = "\"Sin información de la IP.\""
+			x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+			origin = request.META.get('HTTP_ORIGIN')
+
+			if x_forwarded_for:
+				ip = x_forwarded_for.split(',')[0]
+			else:
+				ip = request.META.get('REMOTE_ADDR')
+			url = "https://ipinfo.io/" + ip + "/json"
+			response = requests.get(url)
+			if origin == None:
+				origin = ip
+			if response:
+				data_ip = response.json()
+			ip = "{"+f"\"{origin}\":{data_ip}"+"}"
+		except:
+			ip = 'No fue posible obtener la información de la IP'
+		return ip
+	
+	def validaciones(request):
+		# validar token de llegada -> request
+		mensaje_error = ''
+		status_response = status.HTTP_200_OK
+		response = {}
+		valid = True
+		user = _token.getUser(request)
+		if user == False:
+				mensaje_error += 'Pilot: Token no válido\n'
+				response = {'detail':[],'status':'error', 'code':401,'message':mensaje_error}
+				status_response = status.HTTP_401_UNAUTHORIZED
+				valid = False
+		# Se obtienen los datos del usuario que llega por la url
+		credentials = sale.getCredentialsByHeader(request)
+		
+		if credentials == []:
+			response = {'Instancia no encontrada para el username proporcionado'}
+			status_response = status.HTTP_400_BAD_REQUEST
+		else:
+			username = credentials.username
+			password = credentials.password
+
+		ip = webhook.getIpInfo(request)
+		
+		if 'topic' in request.data:
+				topic=request.data['topic']
+		else:
+			mensaje_error += 'Pilot: topic faltante\n'
+			response = {'detail':[],'status':'error', 'code':400,'message':mensaje_error}
+			status_response = status.HTTP_400_BAD_REQUEST
+			valid = False
+		if 'event' in request.data:
+				event=request.data['event']
+		else:
+			mensaje_error += 'Pilot: event faltante\n'
+			response = {'detail':[],'status':'error', 'code':400,'message':mensaje_error}
+			status_response = status.HTTP_400_BAD_REQUEST
+			valid = False
+		if 'id' in request.data:
+				id_pilot=request.data['id']
+		else:
+			mensaje_error += 'Pilot: id faltante\n'
+			response = {'detail':[],'status':'error', 'code':400,'message':mensaje_error}
+			status_response = status.HTTP_400_BAD_REQUEST
+			valid = False
+		if topic != 'sales':
+			mensaje_error += "Pilot: topic distinto de 'sales'\n"
+			response = {'detail':[],'status':'error', 'code':400,'message':mensaje_error}
+			status_response = status.HTTP_400_BAD_REQUEST
+			valid = False
+		if event != 'create':
+			mensaje_error += "Pilot: event distinto de 'create'\n"
+			response = {'detail':[],'status':'error', 'code':400,'message':mensaje_error}
+			status_response = status.HTTP_400_BAD_REQUEST
+			valid = False
+		if sale.validate(str(id_pilot)) == False:
+			mensaje_error += 'Pilot: id en formato no válido\n'
+			response = {'detail':[],'status':'error', 'code':400,'message':mensaje_error}
+			status_response = status.HTTP_400_BAD_REQUEST
+			valid = False
+		token = sale.getToken(username, password)
+
+		if token == 'NA':
+			mensaje_error += 'Pilot: No fue posible obtener el token de Pilot\n'
+			response = {'detail': [], 'status':'error', 'code':401, 'message': mensaje_error}
+			status_response = status.HTTP_400_BAD_REQUEST
+			valid = False
+		
+		return {
+				'mensaje_error': 	mensaje_error, 
+				'response': 		response, 
+				'status_response': 	status_response, 
+				'valid': 			valid,
+				'id_pilot': 		id_pilot,
+				'event': 			event,
+				'topic': 			topic,
+				'ip': 				ip,
+				'username':			username,
+				'pass': 			password,
+				'token':			token
+				}
+
+	@action(detail=True, methods=['POST'])
+	def post(self, request, format=None):
+		default_branch = 310#219
+		ip = None
+		try:
+			venta = {}
+			status_response = status.HTTP_200_OK
+
+			resp = webhook.validaciones(request)
+			
+			mensaje_error	= 	resp['mensaje_error']
+			response		= 	resp['response']
+			status_response	= 	resp['status_response']
+			valid			= 	resp['valid']
+			id_pilot		= 	resp['id_pilot']
+			event			= 	resp['event']
+			topic			= 	resp['topic']
+			ip				= 	resp['ip']
+			username		= 	resp['username']
+			password		= 	resp['pass']
+			
+			if(valid == False):
+				sale.errorIntegracion(username, password, id_pilot, mensaje_error)
+				loggeractions(2,default_branch,"PilotWebhook","pilot",None,None,request.data,"webhookpilot/",response)
+				return Response(response,status=status_response)
+
+			datos = []
+			datos.append({'topic': topic, 'event': event, 'id':id_pilot})
+			response = {'detail': datos, 'status':'success', 'code':200, 'message':'Datos recibidos correctamente en el webhook'}
+			# Obtiene el json de la venta que se esta procesando
+			responsePilot = sale.read({'username': username, 'password': password}, id_pilot)
+
+			if responsePilot['result']['status'] != 'success':
+				mensaje_error += 'Pilot: ID Pilot no válido\n'
+				valid = False
+				response = {'detail': [], 'status':'error', 'code':400, 'message':mensaje_error}
+				status_response = status.HTTP_400_BAD_REQUEST
+			elif 'code' not in responsePilot['result']['entitydata']['branch']:
+				mensaje_error += 'Pilot: owner_branch_code no válido en la venta de pilot\n'
+				valid = False
+				response = {'detail': [], 'status':'error', 'code':400, 'message':mensaje_error}
+				status_response = status.HTTP_400_BAD_REQUEST
+			
+			if(valid == False):
+				sale.errorIntegracion(username, password, id_pilot, mensaje_error)
+				loggeractions(2,default_branch,"PilotWebhook","pilot",None,None,request.data,"webhookpilot/",response)
+				return Response(response,status=status_response)
+
+			branch_code = responsePilot['result']['entitydata']['branch']['code']
+			
+			if 1 in range(0,len(branch_code.split('-'))):
+				sucursal_int = branch_code.split('-')[1]
+			else:
+				sucursal_int = sepa_branch.objects.get(gwmbac=branch_code)
+				sucursal_int = sucursal_int.id_intelisis
+			# Se almacena el branch_id para que quede registrado si falla la conexion con la bd
+			tamp_branch = sepa_branch.objects.get(gwmbac=branch_code)
+			default_branch = tamp_branch.id 
+
+			venta = request.data
+			if isinstance(venta, QueryDict):
+				venta = venta.dict()
+
+			venta['sucursal'] =  sucursal_int
+
+			with in_database("default"):
+				if sepa_branch.objects.filter(gwmbac=branch_code).exists() != True:
+					mensaje_error += 'Intelisis: la sucursal no existe\n'
+					valid = False
+					response = {'data':[], 'status': '0', 'message':mensaje_error}
+				if valid == True:
+					default_branch = sepa_branch.objects.get(gwmbac=branch_code)
+					default_branch = default_branch.id
+					# Inicia la ejecucion del procedimiento webhook
+					response = sale.execute(venta, default_branch)
+
+			if(valid == False):
+				sale.errorIntegracion(username, password, id_pilot, mensaje_error)
+			loggeractions(2,response['branch_id'],"PilotWebhook","pilot",None,None,venta,"webhookpilot/",response['info'],ip)
+			return Response(response,status=status.HTTP_200_OK)
+
+		except Exception as e:
+			msj = 'Ocurrio un error al conectar con la base de datos' if 'SQL Server' in str(e) else str(e) 
+			response = {'detail':[],'status':'error', 'code':400,'message':msj}
+			loggeractions(2,default_branch,"PilotWebhook","pilot",None,None,venta,"webhookpilot/",response,ip)
+			return Response(response,status=status.HTTP_400_BAD_REQUEST)
+"""
+
+
+
+		
+  		default_branch = 310
+		ip = None
+		try:
+			venta = {}
+			status_response = status.HTTP_200_OK
+			resp = get_ip_info(request)
+			mensaje_error	= 	resp['mensaje_error']
+			response		= 	resp['response']
+			status_response	= 	resp['status_response']
+			valid			= 	resp['valid']
+			id_pilot		= 	resp['id_pilot']
+			event			= 	resp['event']
+			topic			= 	resp['topic']
+			ip				= 	resp['ip']
+			username		= 	resp['username']
+			password		= 	resp['pass']
+			if(valid == False):
+				error_pilot_integracion(username, password, id_pilot, mensaje_error)
+				return Response(response,status=status_response)
+			datos = []
+			datos.append({'topic': topic, 'event': event, 'id':id_pilot})
+			response = {'detail': datos, 'status':'success', 'code':200, 'message':'Datos recibidos correctamente en el webhook'}
+			# Obtiene el json de la venta que se esta procesando
+			responsePilot = get_sale_details_pilot({'username': username, 'password': password}, id_pilot)
+			if responsePilot['result']['status'] != 'success':
+				mensaje_error += 'Pilot: ID Pilot no válido\n'
+				valid = False
+				response = {'detail': [], 'status':'error', 'code':400, 'message':mensaje_error}
+				status_response = status.HTTP_400_BAD_REQUEST
+			elif 'code' not in responsePilot['result']['entitydata']['branch']:
+				mensaje_error += 'Pilot: owner_branch_code no válido en la venta de pilot\n'
+				valid = False
+				response = {'detail': [], 'status':'error', 'code':400, 'message':mensaje_error}
+				status_response = status.HTTP_400_BAD_REQUEST
+			
+			if(valid == False):
+				error_pilot_integracion(username, password, id_pilot, mensaje_error)
+				return Response(response,status=status_response)
+
+			branch_code = responsePilot['result']['entitydata']['branch']['code']
+			
+			if 1 in range(0,len(branch_code.split('-'))):
+				sucursal_int = branch_code.split('-')[1]
+			else:
+				sucursal_int = BranchAPI.objects.get(gwmbac=branch_code)
+				sucursal_int = sucursal_int.sucursal
+			# Se almacena el branch_id para que quede registrado si falla la conexion con la bd
+			tamp_branch = BranchAPI.objects.get(gwmbac=branch_code)
+			default_branch = tamp_branch.id 
+
+			venta = request.data
+			if isinstance(venta, QueryDict):
+				venta = venta.dict()
+
+			venta['sucursal'] =  sucursal_int
+
+			with in_database("default"):
+				if sepa_branch.objects.filter(gwmbac=branch_code).exists() != True:
+					mensaje_error += 'Intelisis: la sucursal no existe\n'
+					valid = False
+					response = {'data':[], 'status': '0', 'message':mensaje_error}
+				if valid == True:
+					default_branch = sepa_branch.objects.get(gwmbac=branch_code)
+					default_branch = default_branch.id
+					# Inicia la ejecucion del procedimiento webhook
+					response = sale.execute(venta, default_branch)
+
+			if(valid == False):
+				sale.errorIntegracion(username, password, id_pilot, mensaje_error)
+			loggeractions(2,response['branch_id'],"PilotWebhook","pilot",None,None,venta,"webhookpilot/",response['info'],ip)
+			return Response(response,status=status.HTTP_200_OK)
+
+		except Exception as e:
+			msj = 'Ocurrio un error al conectar con la base de datos' if 'SQL Server' in str(e) else str(e) 
+			response = {'detail':[],'status':'error', 'code':400,'message':msj}
+			loggeractions(2,default_branch,"PilotWebhook","pilot",None,None,venta,"webhookpilot/",response,ip)
+			return Response(response,status=status.HTTP_400_BAD_REQUEST)

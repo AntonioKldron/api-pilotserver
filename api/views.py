@@ -15,7 +15,7 @@ import re
 import jwt
 import requests
 from sepa.views 							import conectarapiintelisis, loggeractions
-from sepa.models 							import sepa_branch, sepa_branch_details, user, sepa_log
+from sepa.models 							import sepa_branch_details, sepa_log
 from .models 								import pilot
 
 # ================================================================================================

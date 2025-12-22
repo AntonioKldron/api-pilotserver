@@ -117,3 +117,10 @@ def loggeractions(cliente,branch,tipo_movimiento,tabla,device,connection,post,ur
                 objconnection.save()
             historico.idConnection = objconnection.Id
         historico.save()
+
+def dictfetchall(cursor):
+    columns = [col[0] for col in cursor.description]
+    return [
+        dict(zip(columns, row))
+        for row in cursor.fetchall()
+    ]

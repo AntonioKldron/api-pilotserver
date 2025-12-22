@@ -1,10 +1,10 @@
 from django.db import models
-
+from isapilib.api.models import BranchAPI,UserAPI
 # Create your models here.
 class sepa_log(models.Model):
     id = models.AutoField(primary_key=True)
-    id_branch = models.ForeignKey(sepa_branch, to_field='id', on_delete=models.CASCADE)
-    id_usuario = models.ForeignKey(user, to_field='id', on_delete=models.CASCADE,db_constraint=False)
+    id_branch = models.IntegerField(blank=True,null=True)
+    id_usuario = models.IntegerField(blank=True,null=True)
     tipo_movimiento = models.CharField(max_length=120,blank=True)
     tabla = models.CharField(max_length=120,blank=True)
     id_row = models.IntegerField(blank=True,null=True)
@@ -24,7 +24,7 @@ class sepa_log(models.Model):
     
 class sepa_branch_details(models.Model):
     id = models.AutoField(primary_key=True)
-    branch = models.ForeignKey(sepa_branch, on_delete=models.CASCADE)
+    branch = models.IntegerField(blank=True,null=True)
     username = models.CharField(max_length=255,blank=True)
     password = models.CharField(max_length=255,blank=True)
 

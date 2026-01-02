@@ -1,48 +1,21 @@
 from rest_framework import viewsets,status
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from isapilib.external.connection       import add_conn
 
 def conectarapiintelisis(sucursal):
+    external_db = None
     try:
-        with in_database('default'):
-            branch = sepa_branch.objects.filter(id=sucursal).values('id','id_company','clave','nombre','telefono','correo','fecha_creacion','fecha_actualizacion','conf_ip_ext','conf_ip_int','conf_user','conf_pass','conf_db','conf_port','id_intelisis','empresa_intelisis','foto','foto_alt','eliminado','direccion','latitud','longitud','gwmbac','id_district','fotos_recepcion','db_recepcion')[0]
-            external_db = {
-                'ENGINE': 'mssql',
-                'NAME': branch["conf_db"],
-                'USER': branch["conf_user"],
-                'PASSWORD': branch["conf_pass"],
-                'HOST': branch[profilecode()],
-                'PORT': xstr(branch["conf_port"]),
-                'OPTIONS': {
-                    'driver': 'ODBC Driver 17 for SQL Server',
-                }
-            }
-            external_recepcion_db = {
-                'ENGINE': 'mssql',
-                'NAME': branch["db_recepcion"],
-                'USER': branch["conf_user"],
-                'PASSWORD': branch["conf_pass"],
-                'HOST': branch[profilecode()],
-                'PORT': xstr(branch["conf_port"]),
-                'OPTIONS': {
-                    'driver': 'ODBC Driver 17 for SQL Server',
-                }
-            }
-            crm_old_db = {
-                'ENGINE': 'mssql',
-                'NAME': "CRM_FAME",
-                'USER': branch["conf_user"],
-                'PASSWORD': "123456Qwerty",
-                'HOST': "10.255.0.20",
-                'PORT': "",
-                'OPTIONS': {
-                    'driver': 'ODBC Driver 17 for SQL Server',
-                }
-            }
-            return {'dbprofilename': branch["empresa_intelisis"] + '_' + str(branch["id"]),'dbprofilenamerecepcion': branch["db_recepcion"],'dbprofiledata':external_db,'dbprofiledatarecepcion':external_recepcion_db,'dbprofiledatacrmold':crm_old_db}
+        Branch_Api = BranchAPI.objects.get(id=id_branch)
+        print(Branch_Api)
+        User_Api = UserAPI.objects.get(branch=Branch_Api.id)
+        print(User_Api)
+        external_db = add_conn(User_Api, Branch_Api)
+    except ObjectDoesNotExist as e:
+        print(f"ERROR: Configuración no encontrada para la sucursal ID {id_branch}. Detalle: {e}")
     except Exception as e:
-        print(str(e))
-        return None
+        print(f"ERROR CRÍTICO DE CONEXIÓN: Falló la conexión a la DB externa. Detalle: {e}")
+    return external_db
 
 #Function for save data into log table
 def loggeractions(cliente,branch,tipo_movimiento,tabla,device,connection,post,url,sql,origen=None):

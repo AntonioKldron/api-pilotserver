@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 from isapilib.core.utilities import to_bool
+from datetime import timedelta
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(os.path.join(BASE_DIR, '.', '.env'))
@@ -113,6 +114,26 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 AUTH_USER_MODEL = 'isapilib.UserAPI'
 
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=36500),  # 50 años
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=36500), # 50 años
+
+    'ROTATE_REFRESH_TOKENS': False,
+    'BLACKLIST_AFTER_ROTATION': False,
+
+    'ALGORITHM': 'HS256',
+    'SIGNING_KEY': os.getenv("SECRET_KEY"),
+    'AUTH_HEADER_TYPES': ('Bearer',),
+
+    'USER_ID_FIELD': 'id',
+    'USER_ID_CLAIM': 'user_id',
+}
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+}
 
 INTERFAZ_NAME = 'Pilot'
 URL_DOCUMENTATION = ''

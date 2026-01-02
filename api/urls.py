@@ -5,7 +5,7 @@ from .views import webhook, logWebhook, checkConnections, checkConnectionsDB, lo
 router = routers.DefaultRouter()
 
 urlpatterns = [
-    path('', include(router.urls)),
+    ##path('', include(router.urls)),
     # path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('webhookpilot/',           webhook.as_view(),                      name='webhook'),
     path('log/',                    logWebhook.as_view(),                   name='log'),
